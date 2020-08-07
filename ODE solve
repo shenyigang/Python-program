@@ -1,0 +1,109 @@
+# ODEs  sovling.py
+#
+# Copyright (C) 2019, RIKEN,
+#
+# Written by Shen yigang, RIKEN, yigang.shen@riken.jp
+#
+
+import math
+import numpy as np
+from scipy.integrate import odeint
+import matplotlib.pyplot as plt
+
+# set parameters for the model #
+
+L = 9e-3    # Length of microchannel #
+W =2e-4     #W idth  of microchannel #
+H = 24e-5   # Height of microchannel #
+Th = 2.8e-3 # PDMS thickness #
+t1 = 20     # Post-vacuum idle time before loading #
+n1 =10e-3   # Viscosity of liquid #
+
+
+D = 3.4e-9  # Diffusivity of air in PDMS #
+P = 101000  # Atmospheric pressure #
+R = 8.31472 # Gas constant  #
+T = 298     # Temperature #
+Dc = 93     # Contact angle (CA) of the micro-channel #
+Db = 72.4   # Contact angle (CA) of the bottom  #
+r = 55.6/1000    # surface tension of the solution#
+Cp =  r*(2/W+1/H)*math.cos(math.radians(Dc))+r/H*math.cos(math.radians(Db))    # Capillary force #
+
+
+# ordinary differential equations #
+
+C = P/R/T
+aa = (W+2*H)/W/H
+a0 = L*(W+2*H)+W*H
+b0 = W*H*L
+cc = D*C/Th
+c1 = math.pi*math.pi*D/4/Th/Th
+c0 = (P+Cp)*W*H*L/R/T
+dd = (W*W*W*H*H*H*(1+5*H/6/W)/12/n1/L/(W+H)/(W+H))*R*T
+d0 = 0
+
+
+def f(xs,t,paras):
+  
+   
+    A,V,N,Q = xs
+    try: 
+        a = k0
+        b = k1
+        c = k2
+        d = k3
+    except KeyError:
+        a, b, c, d = paras    
+    return np.array([-a*aa*Q,-b*Q,-c*cc*A*math.exp(-c1*(t+t1)),-d*dd*(c*math.exp(-c1*(t+t1))*A/V+Q*N/V/V)])
+
+
+def g(t, x0, paras):
+      x = odeint(f, x0, t, args = (paras,)) 
+      return x
+
+
+
+x10 =a0
+x20 =b0
+x30 =c0
+x40 =d0
+y0 = [x10,x20,x30,x40]
+
+# k2, k3 is from the result of ODE parameter fitting #
+
+k0=1
+k1=1
+k2=-5.4033e-05
+k3=1.0086e-04
+paras=[k0, k1, k2, k3]
+
+d1 = 12*n1*L*(W+H)*(W+H)/W/W/W/H/H/H/(1+5*H/6/W)/k3
+model = g(np.linspace(0, 300, 300), y0, paras)
+x2_model =b0-model[:, 1]
+x3_model =model[:, 3]
+x4_model =R*T*model[:, 2]/model[:, 1]
+x5_model =model[:, 2]
+x6_model =P+Cp-model[:, 3]*d1
+x7_model =model[:, 3]*d1*k3
+
+# calculate the meaning flow rate #
+
+t_measured = np.linspace(0, 300, 11)
+x2_measured = np.array([0, 4.0512E-12, 3.2128E-12, 2.3264E-12, 1.5744E-12, 1.2448E-12, 1.016E-12, 0.7872E-12, 0.5952E-12, 0.512E-12, 0.4E-12])
+plt.plot(np.linspace(0, 300, 300),x3_model,label='Q')
+
+# show the graph 
+plt.scatter(t_measured ,x2_measured)
+plt.legend()
+plt.xlim([0, max(t_measured)])
+plt.ylim([0, 1.1 * max(x2_measured)])
+print('Mean flow rate =', x2_model[299]/300) # caculate the mean flow rate in 5 min #
+
+
+# Save data
+np.savetxt('Flow rate width = 200 um',x3_model)
+np.savetxt('P',x6_model)
+np.savetxt('viscosity P',x7_model)
+plt.legend()
+
+
