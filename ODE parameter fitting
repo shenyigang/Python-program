@@ -1,0 +1,114 @@
+# ODEs parameter fitting.py
+#
+# Copyright (C) 2019, RIKEN,
+#
+# Written by Shen yigang, RIKEN, yigang.shen@riken.jp
+#
+
+import math
+import numpy as np
+from scipy.integrate import odeint
+import matplotlib.pyplot as plt
+from lmfit import minimize, Parameters, Parameter, report_fit
+
+# set parameters for the model #
+
+L = 9e-3    # Length of microchannel #
+W =2e-4     #W idth  of microchannel #
+H = 24e-5   # Height of microchannel #
+Th = 2.8e-3 # PDMS thickness #
+t1 = 20     # Post-vacuum idle time before loading #
+n1 =10e-3   # Viscosity of liquid #
+
+
+D = 3.4e-9  # Diffusivity of air in PDMS #
+P = 101000  # Atmospheric pressure #
+R = 8.31472 # Gas constant  #
+T = 298     # Temperature #
+Dc = 93     # Contact angle (CA) of the micro-channel #
+Db = 72.4   # Contact angle (CA) of the bottom  #
+r = 55.6/1000    # surface tension of the solution#
+Cp =  r*(2/W+1/H)*math.cos(math.radians(Dc))+r/H*math.cos(math.radians(Db))    # Capillary force #
+
+
+# ordinary differential equations #
+
+C = P/R/T
+aa = (W+2*H)/W/H
+a0 = L*(W+2*H)+W*H
+b0 = W*H*L
+cc = D*C/Th
+c1 = math.pi*math.pi*D/4/Th/Th
+c0 = (P+Cp)*W*H*L/R/T
+dd = (W*W*W*H*H*H*(1+5*H/6/W)/12/n1/L/(W+H)/(W+H))*R*T
+d0 = 0
+
+
+
+def f(xs,t,paras):
+  
+   
+    A,V,N,Q = xs
+    try: 
+        a = paras['k0'].value
+        b = paras['k1'].value
+        c = paras['k2'].value
+        d = paras['k3'].value
+
+    except KeyError:
+        a, b, c, d = paras    
+    return np.array([-a*aa*Q,-b*Q,-c*cc*A*math.exp(-c1*(t+t1)),-d*dd*(c*math.exp(-c1*(t+t1))*A/V+Q*N/V/V)])
+
+
+def g(t, x0, paras):
+      x = odeint(f, x0, t, args = (paras,)) 
+      return x
+
+def residual(paras, t, data):
+    x0 = [a0, b0, c0, d0]
+    model = g(t,x0,paras)
+    x2_model = model[:, 3]
+    return (x2_model - data).ravel()
+
+
+x10 =a0
+x20 =b0
+x30 =c0
+x40 =d0
+y0 = [x10,x20,x30,x40]
+
+
+# measured data
+t_measured = np.linspace(0, 300, 11)
+x2_measured = np.array([0, 4.0512E-12, 3.2128E-12, 2.3264E-12, 1.5744E-12, 1.2448E-12, 1.016E-12, 0.7872E-12, 0.5952E-12, 0.512E-12, 0.4E-12])
+
+plt.figure()
+plt.scatter(t_measured, x2_measured, marker='o', color='black', label='measured data', s=20)
+
+# set parameters including bounds; you can also fix parameters (use vary=False)
+params = Parameters()
+params.add('x10', value=x10, vary=False)
+params.add('x20', value=x20, vary=False)
+params.add('x30', value=x30, vary=False)
+params.add('x40', value=x40, vary=False)
+params.add('k0', value=1, vary=False)
+params.add('k1', value=1, vary=False)
+params.add('k2', value=0.001, min=-200, max=100.)
+params.add('k3', value=0.04, min=-200, max=100.)
+
+# fit model
+result = minimize(residual, params, args=(t_measured, x2_measured), method='leastsq')  # leastsq nelder
+
+# check results of the fit
+data_fitted = g(np.linspace(0, 300, 300), y0, result.params)
+
+# plot fitted data
+plt.plot(np.linspace(0, 300, 300), data_fitted[:, 3], '-', linewidth=2, label='fitted data')
+plt.legend()
+plt.xlim([0, max(t_measured)])
+plt.ylim([0, 1.6 * max(data_fitted[:, 3])])
+
+# display fitted statistics
+report_fit(result)
+plt.show()
+
